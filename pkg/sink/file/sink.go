@@ -18,6 +18,7 @@ package file
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,8 +137,15 @@ func (s *Sink) Consume(batch api.Batch) api.Result {
 			log.Warn("codec event error: %+v", err)
 			continue
 		}
+		var maxAge int
+		if ma, ok := e.Header()["maxAge"]; ok {
+			if ma, ok := ma.(string); ok {
+				maxAge, _ = strconv.Atoi(ma)
+			}
+		}
 		msgs = append(msgs, Message{
 			Filename: filename,
+			MaxAge:   maxAge,
 			Data:     data,
 		})
 	}

@@ -43,6 +43,7 @@ type Options struct {
 
 type Message struct {
 	Filename string
+	MaxAge   int
 	Data     []byte
 }
 
@@ -92,14 +93,18 @@ func (w *MultiFileWriter) Write(msgs ...Message) error {
 	}
 
 	assignments := make(map[string][]int32)
+	maxAges := make(map[string]int)
 	for i := range msgs {
 		assignments[msgs[i].Filename] = append(assignments[msgs[i].Filename], int32(i))
+		if _, ok := maxAges[msgs[i].Filename]; !ok {
+			maxAges[msgs[i].Filename] = msgs[i].MaxAge
+		}
 	}
 
 	for key, indexes := range assignments {
-		writer := w.getWriter(key)
+		writer := w.getWriter(key, maxAges[key])
 		is := indexes
-		w.workers.Submit(func() {
+		err := w.workers.Submit(func() {
 			for _, i := range is {
 				if _, err := writer.Write(msgs[i].Data); err != nil {
 					log.Error("write error: %+v", err)
@@ -109,6 +114,9 @@ func (w *MultiFileWriter) Write(msgs ...Message) error {
 				}
 			}
 		})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -159,7 +167,7 @@ func (w *MultiFileWriter) flushLoop() {
 	}
 }
 
-func (w *MultiFileWriter) getWriter(fn string) *Writer {
+func (w *MultiFileWriter) getWriter(fn string, maxAge int) *Writer {
 	w.wsMu.Lock()
 	defer w.wsMu.Unlock()
 	v, ok := w.writers[fn]
@@ -189,6 +197,9 @@ func (w *MultiFileWriter) getWriter(fn string) *Writer {
 		w.writers[fn] = v
 	} else {
 		v.timer.Reset(w.opt.IdleTimeout)
+	}
+	if maxAge > 0 {
+		v.wc.MaxAge = maxAge
 	}
 	return v.Writer
 }
